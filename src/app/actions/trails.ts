@@ -716,6 +716,20 @@ export async function createTrailInscription(formData: FormData): Promise<{ succ
   try {
     // Récupérer les données du formulaire
     const courseId = formData.get("course_id") as string;
+    
+    // Récupérer le trail_id correspondant à la course
+    const { data: course, error: courseError } = await supabase
+      .from("courses")
+      .select("trail_id")
+      .eq("id", courseId)
+      .single();
+    
+    if (courseError || !course) {
+      return { success: false, error: "Course introuvable" };
+    }
+    
+    const trailId = course.trail_id;
+    
     const civilite = formData.get("civilite") as string;
     const nom = formData.get("nom") as string;
     const prenom = formData.get("prenom") as string;
@@ -736,16 +750,21 @@ export async function createTrailInscription(formData: FormData): Promise<{ succ
     const telephoneMobile = formData.get("telephone_mobile") as string;
     const telephoneFixe = formData.get("telephone_fixe") as string;
     const tailleTshirt = formData.get("taille_tshirt") as string;
-    const accepteReglement = formData.get("accepte_reglement") === "true";
-    const accepteListePublique = formData.get("accepte_liste_publique") === "true";
+    const accepteReglement = formData.get("accepte_reglement") === "on";
+    const accepteListePublique = formData.get("accepte_liste_publique") === "on";
     const numeroPps = formData.get("numero_pps") as string;
     const validitePps = formData.get("validite_pps") as string;
 
     // Validation des champs obligatoires
     if (!courseId || !nom || !prenom || !dateNaissance || !email || !confirmationEmail || 
-        !nationalite || !numeroRue || !nomRue || !codePostal || !ville || !pays || 
+        !nationalite || !nomRue || !codePostal || !ville || !pays || 
         !telephoneMobile || !tailleTshirt || !accepteReglement || !accepteListePublique) {
       return { success: false, error: "Tous les champs obligatoires doivent être remplis" };
+    }
+
+    // Validation de la correspondance des emails
+    if (email !== confirmationEmail) {
+      return { success: false, error: "L'email et la confirmation email doivent être identiques" };
     }
 
     // Validation de l'âge (minimum 18 ans)
@@ -793,12 +812,14 @@ export async function createTrailInscription(formData: FormData): Promise<{ succ
     const { data, error } = await supabase
       .from("trail_inscriptions")
       .insert({
+        trail_id: trailId,
         course_id: courseId,
         civilite,
         nom,
         prenom,
         date_naissance: dateNaissance,
         email,
+        email_confirmation: confirmationEmail,
         nationalite,
         licencie_ffa: licencieFfa,
         federation_appartenance: licencieFfa ? federationAppartenance : null,
@@ -815,7 +836,7 @@ export async function createTrailInscription(formData: FormData): Promise<{ succ
         taille_tshirt: tailleTshirt,
         accepte_reglement: accepteReglement,
         accepte_liste_publique: accepteListePublique,
-        statut: "incomplet", // Statut initial
+        statut: "valide", // Statut validé automatiquement
         numero_pps: !licencieFfa ? numeroPps : null,
         validite_pps: !licencieFfa ? validitePps : null,
         numero_dossard: nextNumeroDossard,

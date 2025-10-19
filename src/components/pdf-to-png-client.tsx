@@ -1,44 +1,69 @@
 // components/pdf-to-png-client.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import { Loader2 } from "lucide-react";
 
 // Configuration pour le navigateur avec CDN alternatif
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@5.4.296/build/pdf.worker.min.mjs';
 
-// Déclaration globale pour Tesseract.js depuis le CDN
-declare global {
-  interface Window {
-    Tesseract: any;
+  // Déclaration globale pour Tesseract.js depuis le CDN
+  declare global {
+    interface Window {
+      Tesseract: any;
+    }
   }
-}
 
-interface PDFToPNGProps {
-  file: File;
-  onImageGenerated: (imageFile: File, extractedData?: any) => void;
-  onError: (error: string) => void;
-}
+  interface PDFToPNGProps {
+    file: File;
+    onImageGenerated: (imageFile: File, extractedData?: any) => void;
+    onError: (error: string) => void;
+    onStatusChange?: (status: 'converting' | 'analyzing') => void;
+  }
 
-export function PDFToPNGConverter({ file, onImageGenerated, onError }: PDFToPNGProps) {
+  export function PDFToPNGConverter({ file, onImageGenerated, onError, onStatusChange }: PDFToPNGProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [convertedImage, setConvertedImage] = useState<File | null>(null);
   const [isOCRLoading, setIsOCRLoading] = useState(false);
   const [ocrError, setOcrError] = useState<string | null>(null);
+  const [hasStarted, setHasStarted] = useState(false);
 
-  const convertPDFToPNG = async () => {
+  // Démarrer automatiquement la conversion et l'analyse
+  useEffect(() => {
+    if (file && !hasStarted && !isProcessing && !convertedImage) {
+      setHasStarted(true);
+      handleFullProcess();
+    }
+  }, [file, hasStarted, isProcessing, convertedImage]);
+
+  const handleFullProcess = async () => {
+    try {
+      // Étape 1: Conversion PDF → PNG
+      onStatusChange?.('converting');
+      const imageFile = await convertPDFToPNG();
+      
+      if (imageFile) {
+        // Étape 2: Analyse OCR automatique
+        onStatusChange?.('analyzing');
+        await runOCR(imageFile);
+      }
+    } catch (error) {
+      console.error("❌ [Client PDF] Erreur dans le processus complet:", error);
+      onError("Erreur lors du traitement du document");
+    }
+  };
+
+  const convertPDFToPNG = async (): Promise<File | null> => {
     setIsProcessing(true);
     setOcrError(null);
     
     try {
-      console.log("🔄 [Client PDF] Début de la conversion PDF → PNG");
       
       // Charger le PDF
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       
-      console.log("📄 [Client PDF] PDF chargé, pages:", pdf.numPages);
       
       // Récupérer la première page
       const page = await pdf.getPage(1);
@@ -59,44 +84,49 @@ export function PDFToPNGConverter({ file, onImageGenerated, onError }: PDFToPNGP
       const renderContext = {
         canvasContext: context,
         viewport: viewport,
+        canvas: canvas,
       };
       
       await page.render(renderContext).promise;
       
-      console.log("🖼️ [Client PDF] Page rendue sur canvas");
       
-      // Convertir le canvas en PNG
-      canvas.toBlob(async (blob) => {
-        if (!blob) {
-          throw new Error("Impossible de générer l'image PNG");
-        }
-        
-        // Créer un fichier File à partir du blob
-        const imageFile = new File([blob], `${file.name.replace('.pdf', '')}_page1.png`, {
-          type: "image/png",
-        });
-        
-        console.log("✅ [Client PDF] PNG généré:", imageFile.name, imageFile.size, "octets");
-        
-        // Stocker l'image convertie pour affichage
-        setConvertedImage(imageFile);
-        setIsProcessing(false);
-        
-        // Créer une URL pour l'aperçu
-        const imageUrl = URL.createObjectURL(blob);
-        console.log("🖼️ [Client PDF] Image prête pour aperçu:", imageUrl);
-        
-      }, "image/png", 0.95);
+      // Convertir le canvas en PNG et retourner une Promise
+      return new Promise((resolve, reject) => {
+        canvas.toBlob(async (blob) => {
+          if (!blob) {
+            reject(new Error("Impossible de générer l'image PNG"));
+            return;
+          }
+          
+          // Créer un fichier File à partir du blob
+          const imageFile = new File([blob], `${file.name.replace('.pdf', '')}_page1.png`, {
+            type: "image/png",
+          });
+          
+          
+          // Stocker l'image convertie pour affichage
+          setConvertedImage(imageFile);
+          setIsProcessing(false);
+          
+          // Créer une URL pour l'aperçu
+          const imageUrl = URL.createObjectURL(blob);
+          
+          resolve(imageFile);
+        }, "image/png");
+      });
       
     } catch (error) {
       console.error("❌ [Client PDF] Erreur:", error);
       onError(`Erreur lors de la conversion PDF: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
       setIsProcessing(false);
+      return null;
     }
   };
 
-  const runOCR = async () => {
-    if (!convertedImage) {
+  const runOCR = async (imageFile?: File) => {
+    const imageToUse = imageFile || convertedImage;
+    
+    if (!imageToUse) {
       console.error("❌ [Client OCR] Aucune image convertie disponible");
       return;
     }
@@ -105,15 +135,14 @@ export function PDFToPNGConverter({ file, onImageGenerated, onError }: PDFToPNGP
     setOcrError(null);
     
     try {
-      console.log("🤖 [Client OCR] Début de l'OCR côté client");
       
       // Charger Tesseract.js depuis le CDN si pas déjà chargé
       if (!window.Tesseract) {
         await loadTesseractFromCDN();
       }
       
-      const { data: { text } } = await window.Tesseract.recognize(convertedImage, 'fra+eng', {
-        logger: m => console.log("🤖 [Client Tesseract]", m),
+      const { data: { text } } = await window.Tesseract.recognize(imageToUse, 'fra+eng', {
+        logger: (m: any) => {},
         // Configuration pour améliorer la reconnaissance des documents structurés
         tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÂÄÉÈÊËÏÎÔÖÙÛÜŸÇàâäéèêëïîôöùûüÿç0123456789/.-: ',
         tessedit_pageseg_mode: '6', // Mode de segmentation uniforme
@@ -123,14 +152,12 @@ export function PDFToPNGConverter({ file, onImageGenerated, onError }: PDFToPNGP
         tessedit_create_tsv: '0', // Pas de TSV
       });
       
-      console.log("📝 [Client OCR] Texte extrait (200c):", text.slice(0, 200));
       
       // Extraire les données PPS côté client
       const extractedData = extractPPSDataClient(text);
-      console.log("🎯 [Client OCR] Données extraites:", extractedData);
       
       // Envoyer l'image et les données extraites
-      onImageGenerated(convertedImage, extractedData);
+      onImageGenerated(imageToUse, extractedData);
       
     } catch (ocrError) {
       console.error("❌ [Client OCR] Erreur OCR:", ocrError);
@@ -150,7 +177,6 @@ export function PDFToPNGConverter({ file, onImageGenerated, onError }: PDFToPNGP
       const script = document.createElement('script');
       script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
       script.onload = () => {
-        console.log("✅ [Client OCR] Tesseract.js chargé depuis le CDN");
         resolve(window.Tesseract);
       };
       script.onerror = () => {
@@ -187,31 +213,20 @@ export function PDFToPNGConverter({ file, onImageGenerated, onError }: PDFToPNGP
   };
 
   const extractPPSDataClient = (text: string) => {
-    console.log("🔍 [Client Extraction] Début de l'extraction des données PPS");
-    console.log("📝 [Client Extraction] Texte original:");
-    console.log("=".repeat(50));
-    console.log(text);
-    console.log("=".repeat(50));
 
     const t = oneLine(text);
-    console.log("📝 [Client Extraction] Texte normalisé (une ligne):");
-    console.log(t);
-    console.log("=".repeat(50));
 
     const extractedData: any = {};
 
     // NOM - Pattern tolérant au bruit entre "Nom" et la valeur
-    console.log("🔍 [Client Extraction] Recherche du nom...");
     extractedData.nom = pick1([
       // Pattern très tolérant : Nom suivi de n'importe quoi puis capture des majuscules
       /(?:\bNom\b)[^A-Z]*([A-ZÀÂÄÉÈÊËÏÎÔÖÙÛÜŸÇ]{2,})/,
       // Pattern de fallback : chercher des mots en majuscules après "Nom"
       /(?:\bNom\b).*?([A-ZÀÂÄÉÈÊËÏÎÔÖÙÛÜŸÇ]{2,})/,
     ], t)?.toUpperCase()?.trim();
-    console.log(`✅ [Client Extraction] Nom extrait: "${extractedData.nom}"`);
 
     // PRÉNOM - Pattern tolérant au bruit entre "Prénom" et la valeur
-    console.log("🔍 [Client Extraction] Recherche du prénom...");
     const prenomPatterns = [
       // Pattern très tolérant : Prénom suivi de n'importe quoi puis capture des lettres (peut commencer par plusieurs majuscules)
       /(?:\bPr[ée]nom\b)[^A-Za-z]*([A-ZÀÂÄÉÈÊËÏÎÔÖÙÛÜŸÇ]+[a-zàâäéèêëïîôöùûüÿç]+)/,
@@ -230,20 +245,16 @@ export function PDFToPNGConverter({ file, onImageGenerated, onError }: PDFToPNGP
     for (let i = 0; i < prenomPatterns.length; i++) {
       const pattern = prenomPatterns[i];
       const match = t.match(pattern);
-      console.log(`  Pattern ${i + 1}: ${pattern} → ${match ? `Trouvé: "${match[1]}"` : 'Pas de match'}`);
       if (match) {
         extractedData.prenom = match[1].toUpperCase().trim();
-        console.log(`✅ [Client Extraction] Prénom extrait avec pattern ${i + 1}: "${extractedData.prenom}"`);
         break;
       }
     }
     
     if (!extractedData.prenom) {
-      console.log("⚠️ [Client Extraction] Aucun pattern n'a trouvé le prénom");
     }
 
     // DATE NAISSANCE → ISO
-    console.log("🔍 [Client Extraction] Recherche de la date de naissance...");
     const dn = pick1([
       // Pattern tolérant : Date de naissance suivi de n'importe quoi puis capture de date
       /(?:Date\s+de\s+naissance)[^\d]*(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})/,
@@ -252,11 +263,9 @@ export function PDFToPNGConverter({ file, onImageGenerated, onError }: PDFToPNGP
     ], t);
     if (dn) {
       extractedData.dateNaissance = toISO(dn);
-      console.log(`✅ [Client Extraction] Date de naissance extraite: "${extractedData.dateNaissance}"`);
     }
 
     // NUMÉRO PPS - Pattern tolérant au bruit entre libellés et valeur
-    console.log("🔍 [Client Extraction] Recherche du numéro PPS...");
     extractedData.numeroPps = pick1([
       // Pattern très tolérant : Numéro de PPS suivi de n'importe quoi puis capture du code
       /(?:Num[ée]ro\s+de\s+PPS)[^A-Z0-9]*([A-Z0-9]{6,})/,
@@ -267,10 +276,8 @@ export function PDFToPNGConverter({ file, onImageGenerated, onError }: PDFToPNGP
       // Pattern de fallback : chercher des codes après "PPS"
       /(?:\bPPS\b).*?([A-Z0-9]{6,})/,
     ], t)?.toUpperCase()?.trim();
-    console.log(`✅ [Client Extraction] Numéro PPS extrait: "${extractedData.numeroPps}"`);
 
     // VALIDITÉ → ISO
-    console.log("🔍 [Client Extraction] Recherche de la validité PPS...");
     const val = pick1([
       // Pattern tolérant : Valable jusqu'au suivi de n'importe quoi puis capture de date
       /(?:Valable\s+jusqu['']au)[^\d]*(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})/,
@@ -279,98 +286,16 @@ export function PDFToPNGConverter({ file, onImageGenerated, onError }: PDFToPNGP
     ], t);
     if (val) {
       extractedData.validitePps = toISO(val);
-      console.log(`✅ [Client Extraction] Validité PPS extraite: "${extractedData.validitePps}"`);
     }
 
-    console.log("🎯 [Client Extraction] Résumé des données extraites:", extractedData);
     return extractedData;
   };
 
 
   return (
     <div className="space-y-4">
-      <div className="p-4 border rounded-lg bg-blue-50">
-        <h3 className="font-medium text-blue-900 mb-2">📄 Fichier PDF détecté</h3>
-        <p className="text-sm text-blue-700 mb-4">
-          Nous devons convertir votre PDF en image pour l'analyse OCR.
-        </p>
-        
-        {!convertedImage && (
-          <button
-            onClick={convertPDFToPNG}
-            disabled={isProcessing}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed w-full"
-          >
-            {isProcessing ? (
-              <>
-                🔄 Conversion en cours...
-              </>
-            ) : (
-              <>
-                🔄 Convertir le PDF en image
-              </>
-            )}
-          </button>
-        )}
-      </div>
 
-      {/* Aperçu de l'image convertie */}
-      {convertedImage && (
-        <div className="space-y-4">
-          <div className="p-4 border rounded-lg bg-green-50">
-            <h4 className="font-medium text-green-900 mb-2">✅ Image convertie avec succès</h4>
-            <p className="text-sm text-green-700 mb-4">
-              Vérifiez que l'image est claire et lisible avant de lancer l'OCR.
-            </p>
-            
-            {/* Aperçu de l'image */}
-            <div className="border rounded-lg p-4 bg-white">
-              <img 
-                src={URL.createObjectURL(convertedImage)} 
-                alt="Aperçu de l'image convertie"
-                className="max-w-full h-auto max-h-96 mx-auto block rounded"
-                style={{ maxWidth: '100%', height: 'auto' }}
-              />
-              <p className="text-xs text-gray-500 mt-2 text-center">
-                Taille: {convertedImage.size} octets
-              </p>
-            </div>
-            
-            {/* Bouton pour lancer l'OCR */}
-            <div className="mt-4 space-y-2">
-              <button
-                onClick={runOCR}
-                disabled={isOCRLoading}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed w-full"
-              >
-                {isOCRLoading ? (
-                  <>
-                    🤖 Analyse OCR en cours...
-                  </>
-                ) : (
-                  <>
-                    🤖 Lancer l'analyse OCR
-                  </>
-                )}
-              </button>
-              
-              {ocrError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-sm text-red-700">
-                    <strong>Erreur OCR:</strong> {ocrError}
-                  </p>
-                  <button
-                    onClick={runOCR}
-                    className="mt-2 px-3 py-1 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200"
-                  >
-                    Réessayer l'OCR
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
+

@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { Upload, X, FileText, Loader2, CheckCircle, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { uploadAndValidatePPS } from "@/app/actions/pps-validation";
-import { PDFToPNGConverter } from "@/components/pdf-to-png-client";
+import { PDFToPNGConverter } from "@/components/pdf-to-png-wrapper";
 import { toast } from "sonner";
 
 interface PPSUploadProps {
@@ -31,8 +31,9 @@ export function PPSUpload({
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'success' | 'error'>('idle');
+  const [validationStatus, setValidationStatus] = useState<'idle' | 'converting' | 'analyzing' | 'validating' | 'success' | 'error'>('idle');
   const [selectedPDF, setSelectedPDF] = useState<File | null>(null);
+  const [currentStep, setCurrentStep] = useState<string>("");
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -93,7 +94,8 @@ export function PPSUpload({
       // Si c'est un PDF, on le stocke pour conversion côté client
       if (file.type === "application/pdf") {
         setSelectedPDF(file);
-        setValidationStatus('idle');
+        setValidationStatus('converting');
+        setCurrentStep("Conversion du PDF en image...");
         return;
       }
 
@@ -113,7 +115,7 @@ export function PPSUpload({
 
     try {
       // Upload et validation PPS
-      const result = await uploadAndValidatePPS(file, userData);
+      const result = await uploadAndValidatePPS(file, userData, undefined);
 
       if (result.success && result.extractedData) {
         setValidationStatus('success');
@@ -139,39 +141,32 @@ export function PPSUpload({
   };
 
   const handlePDFConverted = async (imageFile: File, extractedData?: any) => {
-    console.log("✅ [PPS Upload] PDF converti en PNG:", imageFile.name);
-    console.log("🎯 [PPS Upload] Données extraites côté client:", extractedData);
     
     // Si on a des données extraites côté client, les utiliser
     if (extractedData && Object.keys(extractedData).length > 0) {
-      console.log("✨ [PPS Upload] Utilisation des données extraites côté client");
       
       // Pré-remplir les champs avec les données extraites
       if (extractedData.nom) {
-        console.log("📝 [PPS Upload] Pré-remplissage du nom:", extractedData.nom);
       }
       if (extractedData.prenom) {
-        console.log("📝 [PPS Upload] Pré-remplissage du prénom:", extractedData.prenom);
       }
       if (extractedData.dateNaissance) {
-        console.log("📝 [PPS Upload] Pré-remplissage de la date:", extractedData.dateNaissance);
       }
       if (extractedData.numeroPps) {
-        console.log("📝 [PPS Upload] Pré-remplissage du numéro PPS:", extractedData.numeroPps);
       }
       if (extractedData.validitePps) {
-        console.log("📝 [PPS Upload] Pré-remplissage de la validité PPS:", extractedData.validitePps);
       }
       
-      // Upload vers Google Drive et validation avec les données extraites côté client
-      setIsUploading(true);
+      // Automatiquement passer à l'étape de validation
       setValidationStatus('validating');
+      setCurrentStep("Validation des données...");
       
       try {
         const result = await uploadAndValidatePPS(selectedPDF!, userData, extractedData);
         
         if (result.success && result.extractedData) {
           setValidationStatus('success');
+          setCurrentStep("Attestation validée avec succès !");
           onPathChange(result.googleDriveUrl || '');
           onValidationSuccess({
             numeroPps: result.extractedData.numeroPps!,
@@ -181,11 +176,13 @@ export function PPSUpload({
         } else {
           setError(result.error || "Erreur lors de la validation");
           setValidationStatus('error');
+          setCurrentStep("");
           toast.error(result.error || "Erreur lors de la validation");
         }
       } catch (err) {
         setError("Une erreur inattendue est survenue");
         setValidationStatus('error');
+        setCurrentStep("");
         toast.error("Une erreur inattendue est survenue");
         console.error(err);
       } finally {
@@ -243,6 +240,15 @@ export function PPSUpload({
           file={selectedPDF}
           onImageGenerated={handlePDFConverted}
           onError={handlePDFError}
+          onStatusChange={(status) => {
+            if (status === 'converting') {
+              setValidationStatus('converting');
+              setCurrentStep("Conversion du PDF en image...");
+            } else if (status === 'analyzing') {
+              setValidationStatus('analyzing');
+              setCurrentStep("Analyse du document...");
+            }
+          }}
         />
       )}
 
@@ -290,13 +296,18 @@ export function PPSUpload({
       )}
 
       {/* Upload en cours */}
-      {isUploading && (
+      {(isUploading || validationStatus === 'converting' || validationStatus === 'analyzing' || validationStatus === 'validating') && (
         <div className="flex items-center justify-center p-8 border-2 border-dashed rounded-lg">
           <div className="flex flex-col items-center gap-3">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Upload et validation en cours...</p>
+            <p className="text-sm text-muted-foreground">
+              {validationStatus === 'converting' && "Conversion du PDF en image..."}
+              {validationStatus === 'analyzing' && "Analyse du document..."}
+              {validationStatus === 'validating' && "Validation des données..."}
+              {isUploading && "Upload et validation en cours..."}
+            </p>
             <p className="text-xs text-muted-foreground">
-              Le document est analysé pour extraire les informations PPS
+              {currentStep || "Le document est analysé pour extraire les informations PPS"}
             </p>
           </div>
         </div>
@@ -306,11 +317,11 @@ export function PPSUpload({
       {currentPath && !isUploading && (
         <div className="relative group">
           <div className={`
-            relative aspect-video rounded-lg overflow-hidden border-2 
+            relative rounded-lg border-2 p-6
             ${validationStatus === 'success' ? "border-green-500 bg-green-50" : ""}
             ${validationStatus === 'error' ? "border-red-500 bg-red-50" : "border-muted"}
           `}>
-            <div className="flex items-center justify-center h-full">
+            <div className="flex items-center justify-center">
               <div className="text-center">
                 <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-2" />
                 <p className="text-sm text-muted-foreground">

@@ -30,7 +30,7 @@ export async function uploadAndValidatePPS(
     prenom: string;
     dateNaissance: string; // attendu au format ISO (YYYY-MM-DD) côté formulaire si possible
   },
-  extractedData: PPSExtractedData // Données déjà extraites côté client
+  extractedData?: PPSExtractedData // Données déjà extraites côté client
 ): Promise<ValidationResult> {
   console.log("🚀 [PPS Validation] Début du processus");
   console.log("📁 [PPS Validation] Fichier:", file.name, "Taille:", file.size, "Type:", file.type);
@@ -54,7 +54,7 @@ export async function uploadAndValidatePPS(
 
     // 3) Validation des données extraites vs données saisies
     console.log("🔍 [PPS Validation] Étape 3: Validation des données...");
-    const validationResult = validateExtractedData(extractedData, userData);
+    const validationResult = extractedData ? validateExtractedData(extractedData, userData) : { success: true, extractedData: {} };
     if (!validationResult.success) {
       console.error("❌ [PPS Validation] Échec validation:", validationResult.error);
       return { success: false, error: validationResult.error };

@@ -36,6 +36,23 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
   const [validitePps, setValiditePps] = useState<string>("");
   const [nom, setNom] = useState<string>("");
   const [prenom, setPrenom] = useState<string>("");
+  
+  // États pour tous les champs du formulaire
+  const [civilite, setCivilite] = useState<string>("");
+  const [nationalite, setNationalite] = useState<string>("");
+  const [email, setEmail] = useState<string>("");
+  const [confirmationEmail, setConfirmationEmail] = useState<string>("");
+  const [telephoneMobile, setTelephoneMobile] = useState<string>("");
+  const [telephoneFixe, setTelephoneFixe] = useState<string>("");
+  const [numeroRue, setNumeroRue] = useState<string>("");
+  const [nomRue, setNomRue] = useState<string>("");
+  const [complementAdresse, setComplementAdresse] = useState<string>("");
+  const [codePostal, setCodePostal] = useState<string>("");
+  const [ville, setVille] = useState<string>("");
+  const [pays, setPays] = useState<string>("France");
+  const [tailleTshirt, setTailleTshirt] = useState<string>("");
+  const [accepteReglement, setAccepteReglement] = useState<boolean>(false);
+  const [accepteListePublique, setAccepteListePublique] = useState<boolean>(false);
 
   // Fonction pour vérifier l'âge
   const checkAge = (dateNaissance: string): boolean => {
@@ -63,25 +80,45 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
     }
   };
 
-  const handleSubmit = async (formData: FormData) => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setIsSubmitting(true);
     setError(null);
 
     try {
       // Vérifier l'âge avant de soumettre
-      const dateNaissanceForm = formData.get("date_naissance") as string;
-      if (!checkAge(dateNaissanceForm)) {
+      if (!checkAge(dateNaissance)) {
         setError("Vous devez avoir au moins 18 ans pour vous inscrire à cette course.");
         setIsSubmitting(false);
         return;
       }
 
-      // Ajouter les données supplémentaires
+      // Créer un FormData avec les valeurs des états
+      const formData = new FormData();
       formData.append("course_id", course.id);
-      formData.append("licencie_ffa", isLicencieFfa.toString());
-      formData.append("attestation_pps_url", attestationPpsUrl);
+      formData.append("civilite", civilite);
+      formData.append("prenom", prenom);
+      formData.append("nom", nom);
+      formData.append("date_naissance", dateNaissance);
+      formData.append("nationalite", nationalite);
+      formData.append("email", email);
+      formData.append("confirmation_email", confirmationEmail);
+      formData.append("telephone_mobile", telephoneMobile);
+      formData.append("telephone_fixe", telephoneFixe);
       formData.append("numero_pps", numeroPps);
       formData.append("validite_pps", validitePps);
+      formData.append("numero_rue", numeroRue);
+      formData.append("nom_rue", nomRue);
+      formData.append("complement_adresse", complementAdresse);
+      formData.append("code_postal", codePostal);
+      formData.append("ville", ville);
+      formData.append("pays", pays);
+      formData.append("taille_tshirt", tailleTshirt);
+      formData.append("licencie_ffa", isLicencieFfa.toString());
+      formData.append("attestation_pps_url", attestationPpsUrl);
+      formData.append("accepte_reglement", accepteReglement ? "on" : "");
+      formData.append("accepte_liste_publique", accepteListePublique ? "on" : "");
+
 
       const result = await createTrailInscription(formData);
 
@@ -100,7 +137,6 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
     } catch (err) {
       setError("Une erreur inattendue est survenue");
       toast.error("Une erreur inattendue est survenue");
-      console.error(err);
     } finally {
       setIsSubmitting(false);
     }
@@ -154,7 +190,7 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
         </div>
 
         <div className="max-w-4xl mx-auto">
-          <form action={handleSubmit} className="space-y-8">
+          <form onSubmit={handleSubmit} className="space-y-8">
             {error && (
               <Card className="border-red-200 bg-red-50">
                 <CardContent className="pt-6">
@@ -179,7 +215,12 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <Label htmlFor="civilite">Civilité *</Label>
-                    <Select name="civilite" required>
+                    <Select 
+                      name="civilite" 
+                      required
+                      value={civilite}
+                      onValueChange={setCivilite}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Sélectionnez" />
                       </SelectTrigger>
@@ -231,7 +272,14 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
                   </div>
                   <div>
                     <Label htmlFor="nationalite">Nationalité *</Label>
-                    <Input id="nationalite" name="nationalite" placeholder="Française" required />
+                    <Input 
+                      id="nationalite" 
+                      name="nationalite" 
+                      placeholder="Française" 
+                      required 
+                      value={nationalite}
+                      onChange={(e) => setNationalite(e.target.value)}
+                    />
                   </div>
                 </div>
               </CardContent>
@@ -249,22 +297,49 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="email">Email *</Label>
-                    <Input id="email" name="email" type="email" required />
+                    <Input 
+                      id="email" 
+                      name="email" 
+                      type="email" 
+                      required 
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                    />
                   </div>
                   <div>
                     <Label htmlFor="confirmation_email">Confirmation email *</Label>
-                    <Input id="confirmation_email" name="confirmation_email" type="email" required />
+                    <Input 
+                      id="confirmation_email" 
+                      name="confirmation_email" 
+                      type="email" 
+                      required 
+                      value={confirmationEmail}
+                      onChange={(e) => setConfirmationEmail(e.target.value)}
+                    />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="telephone_mobile">Téléphone mobile *</Label>
-                    <Input id="telephone_mobile" name="telephone_mobile" type="tel" required />
+                    <Input 
+                      id="telephone_mobile" 
+                      name="telephone_mobile" 
+                      type="tel" 
+                      required 
+                      value={telephoneMobile}
+                      onChange={(e) => setTelephoneMobile(e.target.value)}
+                    />
                   </div>
                   <div>
                     <Label htmlFor="telephone_fixe">Téléphone fixe</Label>
-                    <Input id="telephone_fixe" name="telephone_fixe" type="tel" />
+                    <Input 
+                      id="telephone_fixe" 
+                      name="telephone_fixe" 
+                      type="tel" 
+                      value={telephoneFixe}
+                      onChange={(e) => setTelephoneFixe(e.target.value)}
+                    />
                   </div>
                 </div>
               </CardContent>
@@ -344,28 +419,21 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
                         currentPath={attestationPpsUrl}
                         onPathChange={setAttestationPpsUrl}
                         onValidationSuccess={(data) => {
-                          console.log("🎯 [Form] Données reçues du PPS Upload:", data);
-                          
                           // Pré-remplir tous les champs avec les données extraites
                           if (data.nom) {
                             setNom(data.nom);
-                            console.log("📝 [Form] Nom pré-rempli:", data.nom);
                           }
                           if (data.prenom) {
                             setPrenom(data.prenom);
-                            console.log("📝 [Form] Prénom pré-rempli:", data.prenom);
                           }
                           if (data.dateNaissance) {
                             setDateNaissance(data.dateNaissance);
-                            console.log("📝 [Form] Date pré-remplie:", data.dateNaissance);
                           }
                           if (data.numeroPps) {
                             setNumeroPps(data.numeroPps);
-                            console.log("📝 [Form] Numéro PPS pré-rempli:", data.numeroPps);
                           }
                           if (data.validitePps) {
                             setValiditePps(data.validitePps);
-                            console.log("📝 [Form] Validité PPS pré-remplie:", data.validitePps);
                           }
                         }}
                         userData={{
@@ -396,12 +464,23 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
               <CardContent className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <Label htmlFor="numero_rue">Numéro *</Label>
-                    <Input id="numero_rue" name="numero_rue" required />
+                    <Label htmlFor="numero_rue">Numéro</Label>
+                    <Input 
+                      id="numero_rue" 
+                      name="numero_rue" 
+                      value={numeroRue}
+                      onChange={(e) => setNumeroRue(e.target.value)}
+                    />
                   </div>
                   <div className="md:col-span-2">
                     <Label htmlFor="nom_rue">Nom de la rue *</Label>
-                    <Input id="nom_rue" name="nom_rue" required />
+                    <Input 
+                      id="nom_rue" 
+                      name="nom_rue" 
+                      required 
+                      value={nomRue}
+                      onChange={(e) => setNomRue(e.target.value)}
+                    />
                   </div>
                 </div>
 
@@ -411,21 +490,41 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
                     id="complement_adresse" 
                     name="complement_adresse"
                     placeholder="Entrée, Bâtiment, Immeuble, Résidence, Lieu-dit..."
+                    value={complementAdresse}
+                    onChange={(e) => setComplementAdresse(e.target.value)}
                   />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <Label htmlFor="code_postal">Code postal *</Label>
-                    <Input id="code_postal" name="code_postal" required />
+                    <Input 
+                      id="code_postal" 
+                      name="code_postal" 
+                      required 
+                      value={codePostal}
+                      onChange={(e) => setCodePostal(e.target.value)}
+                    />
                   </div>
                   <div>
                     <Label htmlFor="ville">Ville *</Label>
-                    <Input id="ville" name="ville" required />
+                    <Input 
+                      id="ville" 
+                      name="ville" 
+                      required 
+                      value={ville}
+                      onChange={(e) => setVille(e.target.value)}
+                    />
                   </div>
                   <div>
                     <Label htmlFor="pays">Pays *</Label>
-                    <Input id="pays" name="pays" defaultValue="France" required />
+                    <Input 
+                      id="pays" 
+                      name="pays" 
+                      required 
+                      value={pays}
+                      onChange={(e) => setPays(e.target.value)}
+                    />
                   </div>
                 </div>
               </CardContent>
@@ -442,7 +541,12 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
               <CardContent>
                 <div>
                   <Label htmlFor="taille_tshirt">Taille *</Label>
-                  <Select name="taille_tshirt" required>
+                  <Select 
+                    name="taille_tshirt" 
+                    required
+                    value={tailleTshirt}
+                    onValueChange={setTailleTshirt}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Sélectionnez votre taille" />
                     </SelectTrigger>
@@ -468,14 +572,26 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-start space-x-2">
-                  <Checkbox id="accepte_reglement" name="accepte_reglement" required />
+                  <Checkbox 
+                    id="accepte_reglement" 
+                    name="accepte_reglement" 
+                    required 
+                    checked={accepteReglement}
+                    onCheckedChange={(checked) => setAccepteReglement(checked === true)}
+                  />
                   <Label htmlFor="accepte_reglement" className="text-sm">
                     Je certifie avoir lu le règlement officiel de l'épreuve / activité et m'engage à le respecter intégralement. *
                   </Label>
                 </div>
 
                 <div className="flex items-start space-x-2">
-                  <Checkbox id="accepte_liste_publique" name="accepte_liste_publique" required />
+                  <Checkbox 
+                    id="accepte_liste_publique" 
+                    name="accepte_liste_publique" 
+                    required 
+                    checked={accepteListePublique}
+                    onCheckedChange={(checked) => setAccepteListePublique(checked === true)}
+                  />
                   <Label htmlFor="accepte_liste_publique" className="text-sm">
                     J'accepte d'apparaître sur la liste publique des participants et dans les résultats/classements publics de cet événement. *
                   </Label>
