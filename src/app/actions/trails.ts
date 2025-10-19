@@ -717,10 +717,15 @@ export async function createTrailInscription(formData: FormData): Promise<{ succ
     // Récupérer les données du formulaire
     const courseId = formData.get("course_id") as string;
     
-    // Récupérer le trail_id correspondant à la course
+    // Récupérer le trail_id et la date de l'événement correspondant à la course
     const { data: course, error: courseError } = await supabase
       .from("courses")
-      .select("trail_id")
+      .select(`
+        trail_id,
+        trail!inner (
+          date_evenement
+        )
+      `)
       .eq("id", courseId)
       .single();
     
@@ -729,6 +734,7 @@ export async function createTrailInscription(formData: FormData): Promise<{ succ
     }
     
     const trailId = course.trail_id;
+    const dateEvenement = course.trail.date_evenement;
     
     const civilite = formData.get("civilite") as string;
     const nom = formData.get("nom") as string;
@@ -758,7 +764,7 @@ export async function createTrailInscription(formData: FormData): Promise<{ succ
     // Validation des champs obligatoires
     if (!courseId || !nom || !prenom || !dateNaissance || !email || !confirmationEmail || 
         !nationalite || !nomRue || !codePostal || !ville || !pays || 
-        !telephoneMobile || !tailleTshirt || !accepteReglement || !accepteListePublique) {
+        !telephoneMobile || !tailleTshirt || !accepteReglement) {
       return { success: false, error: "Tous les champs obligatoires doivent être remplis" };
     }
 
@@ -787,6 +793,35 @@ export async function createTrailInscription(formData: FormData): Promise<{ succ
       return { success: false, error: "Les adresses email ne correspondent pas" };
     }
 
+    // Validation PPS (pour les non-licenciés)
+    if (!licencieFfa) {
+      if (!validitePps) {
+        return { success: false, error: "La date de validité PPS est obligatoire" };
+      }
+
+      const validitePpsDate = new Date(validitePps);
+      const evenementDate = new Date(dateEvenement);
+      
+      // Vérifier que le PPS est encore valide à la date de l'événement
+      if (validitePpsDate < evenementDate) {
+        return { 
+          success: false, 
+          error: `Votre attestation PPS expire le ${validitePpsDate.toLocaleDateString('fr-FR')} mais l'événement a lieu le ${evenementDate.toLocaleDateString('fr-FR')}. Veuillez renouveler votre attestation PPS.` 
+        };
+      }
+
+      // Vérifier que le PPS n'est pas expiré depuis plus de 3 mois
+      const troisMoisAvant = new Date();
+      troisMoisAvant.setMonth(troisMoisAvant.getMonth() - 3);
+      
+      if (validitePpsDate < troisMoisAvant) {
+        return { 
+          success: false, 
+          error: `Votre attestation PPS a expiré depuis plus de 3 mois (expiré le ${validitePpsDate.toLocaleDateString('fr-FR')}). Veuillez renouveler votre attestation PPS.` 
+        };
+      }
+    }
+
     // Validation licence FFA
     if (licencieFfa && (!federationAppartenance || !numeroLicence)) {
       return { success: false, error: "Les informations de licence FFA sont obligatoires" };
@@ -795,6 +830,31 @@ export async function createTrailInscription(formData: FormData): Promise<{ succ
     // Validation PPS
     if (!licencieFfa && (!attestationPpsUrl || !numeroPps || !validitePps)) {
       return { success: false, error: "Les informations PPS sont obligatoires pour les non-licenciés" };
+    }
+
+    // Vérification des doublons (email et téléphone)
+    const { data: existingInscriptions, error: duplicateError } = await supabase
+      .from("trail_inscriptions")
+      .select("email, telephone_mobile")
+      .eq("course_id", courseId)
+      .or(`email.eq.${email},telephone_mobile.eq.${telephoneMobile}`);
+
+    if (duplicateError) {
+      console.error("Error checking duplicates:", duplicateError);
+      return { success: false, error: "Erreur lors de la vérification des doublons" };
+    }
+
+    if (existingInscriptions && existingInscriptions.length > 0) {
+      const duplicateEmail = existingInscriptions.find(inscription => inscription.email === email);
+      const duplicatePhone = existingInscriptions.find(inscription => inscription.telephone_mobile === telephoneMobile);
+      
+      if (duplicateEmail && duplicatePhone) {
+        return { success: false, error: "Une inscription avec cet email et ce numéro de téléphone existe déjà pour cette course" };
+      } else if (duplicateEmail) {
+        return { success: false, error: "Une inscription avec cet email existe déjà pour cette course" };
+      } else if (duplicatePhone) {
+        return { success: false, error: "Une inscription avec ce numéro de téléphone existe déjà pour cette course" };
+      }
     }
 
     // Générer un numéro de dossard unique

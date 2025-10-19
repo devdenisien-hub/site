@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,11 +8,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ArrowLeft, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { createTrailInscription } from "@/app/actions/trails";
+import { createClient } from "@/lib/supabase/client";
 import { TrailWithCoursesAndStats, CourseWithParticipants } from "@/app/actions/trails";
 import { PPSUpload } from "@/components/ui/pps-upload";
 import { toast } from "sonner";
@@ -39,7 +41,7 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
   
   // États pour tous les champs du formulaire
   const [civilite, setCivilite] = useState<string>("");
-  const [nationalite, setNationalite] = useState<string>("");
+  const [nationalite, setNationalite] = useState<string>("Française");
   const [email, setEmail] = useState<string>("");
   const [confirmationEmail, setConfirmationEmail] = useState<string>("");
   const [telephoneMobile, setTelephoneMobile] = useState<string>("");
@@ -49,10 +51,29 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
   const [complementAdresse, setComplementAdresse] = useState<string>("");
   const [codePostal, setCodePostal] = useState<string>("");
   const [ville, setVille] = useState<string>("");
-  const [pays, setPays] = useState<string>("France");
+  const [pays, setPays] = useState<string>("Martinique");
   const [tailleTshirt, setTailleTshirt] = useState<string>("");
   const [accepteReglement, setAccepteReglement] = useState<boolean>(false);
   const [accepteListePublique, setAccepteListePublique] = useState<boolean>(false);
+  const [reglementHtml, setReglementHtml] = useState<string>("");
+
+  // Récupérer le règlement au chargement
+  useEffect(() => {
+    const fetchReglement = async () => {
+      const supabase = createClient();
+      const { data: trailData, error } = await supabase
+        .from("trail")
+        .select("reglement_html")
+        .eq("id", trail.id)
+        .single();
+      
+      if (!error && trailData?.reglement_html) {
+        setReglementHtml(trailData.reglement_html);
+      }
+    };
+    
+    fetchReglement();
+  }, [trail.id]);
 
   // Fonction pour vérifier l'âge
   const checkAge = (dateNaissance: string): boolean => {
@@ -384,7 +405,15 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
                         <span className="font-medium">Attestation PPS requise</span>
                       </div>
                       <p className="text-yellow-700 text-sm">
-                        Vous devez fournir une attestation PPS valable à la date de l'événement.
+                        Vous devez fournir une attestation PPS valable à la date de l'événement.{" "}
+                        <a 
+                          href="https://pps.athle.fr/" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-yellow-800 underline hover:text-yellow-900 font-medium"
+                        >
+                          Créer une attestation PPS gratuitement
+                        </a>
                       </p>
                     </div>
 
@@ -580,7 +609,27 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
                     onCheckedChange={(checked) => setAccepteReglement(checked === true)}
                   />
                   <Label htmlFor="accepte_reglement" className="text-sm">
-                    Je certifie avoir lu le règlement officiel de l'épreuve / activité et m'engage à le respecter intégralement. *
+                    Je certifie avoir lu le{" "}
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <button 
+                          type="button"
+                          className="text-primary underline hover:text-primary/80 cursor-pointer"
+                        >
+                          règlement
+                        </button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle>Règlement officiel de l'épreuve</DialogTitle>
+                        </DialogHeader>
+                        <div 
+                          className="prose prose-sm max-w-none"
+                          dangerouslySetInnerHTML={{ __html: reglementHtml || "Aucun règlement disponible." }}
+                        />
+                      </DialogContent>
+                    </Dialog>
+                    {" "}et m'engage à le respecter intégralement. *
                   </Label>
                 </div>
 
@@ -588,12 +637,11 @@ export function TrailInscriptionForm({ trail, course }: TrailInscriptionFormProp
                   <Checkbox 
                     id="accepte_liste_publique" 
                     name="accepte_liste_publique" 
-                    required 
                     checked={accepteListePublique}
                     onCheckedChange={(checked) => setAccepteListePublique(checked === true)}
                   />
                   <Label htmlFor="accepte_liste_publique" className="text-sm">
-                    J'accepte d'apparaître sur la liste publique des participants et dans les résultats/classements publics de cet événement. *
+                    J'accepte d'apparaître sur la liste publique des participants et dans les résultats/classements publics de cet événement.
                   </Label>
                 </div>
               </CardContent>
